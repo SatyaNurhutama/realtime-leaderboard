@@ -2,6 +2,8 @@ package leaderboard
 
 import (
 	"encoding/json"
+	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -11,15 +13,34 @@ import (
 var clients = make(map[*websocket.Conn]bool)
 var broadcast = make(chan map[string]interface{})
 var upgrader = websocket.Upgrader{}
+var lock = sync.Mutex{}
 
 func WebSocketHandler(c *gin.Context) {
+	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		c.String(500, "Failed to upgrade connection: %v", err)
 		return
 	}
-	defer conn.Close()
+
+	lock.Lock()
 	clients[conn] = true
+	lock.Unlock()
+
+	defer func() {
+		lock.Lock()
+		delete(clients, conn)
+		lock.Unlock()
+		conn.Close()
+	}()
+
+	// Read loop just to keep connection alive
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+	}
 }
 
 func RunHub() {
@@ -36,6 +57,8 @@ func RunHub() {
 
 	for {
 		msg := <-broadcast
+
+		lock.Lock()
 		for client := range clients {
 			err := client.WriteJSON(msg)
 			if err != nil {
@@ -43,5 +66,6 @@ func RunHub() {
 				delete(clients, client)
 			}
 		}
+		lock.Unlock()
 	}
 }

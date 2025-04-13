@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Leaderboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      background: #f9f9f9;
+    }
+    h1, h2 {
+      margin-bottom: 1rem;
+    }
+    form {
+      margin-bottom: 2rem;
+    }
+    ul {
+      list-style: none;
+      padding-left: 0;
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+      max-width: 400px;
+      padding: 1rem;
+    }
+    li {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #eee;
+    }
+    li:last-child {
+      border-bottom: none;
+    }
+    .user {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🏆 Live Leaderboard</h1>
+
+  <form id="scoreForm">
+    <input type="text" id="user" placeholder="Username" required>
+    <input type="number" id="score" placeholder="Score" required>
+    <button type="submit">Submit Score</button>
+  </form>
+
+  <h2>Top Scores</h2>
+  <ul id="leaderboard"></ul>
+
+  <script>
+    const apiUrl = 'http://localhost:8080';
+    const leaderboardList = document.getElementById('leaderboard');
+    const scoresMap = new Map(); // Keep track of current scores
+
+    function renderLeaderboard(data) {
+      leaderboardList.innerHTML = '';
+
+      data.sort((a, b) => b.score - a.score);
+
+      data.forEach((entry, index) => {
+        const li = document.createElement('li');
+        li.innerHTML = `#${index + 1} <span class="user">${entry.user}</span> — ${entry.score}`;
+        leaderboardList.appendChild(li);
+      });
+    }
+
+    function fetchTopScores() {
+      fetch(`${apiUrl}/top-scores?limit=10`)
+        .then(res => res.json())
+        .then(data => {
+          renderLeaderboard(data);
+          // Update map
+          scoresMap.clear();
+          data.forEach(entry => scoresMap.set(entry.user, entry.score));
+        });
+    }
+
+    fetchTopScores();
+
+    const ws = new WebSocket(`ws://localhost:8080/ws`);
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.user && typeof data.score === 'number') {
+          scoresMap.set(data.user, data.score);
+
+          const topArray = Array.from(scoresMap.entries())
+            .map(([user, score]) => ({ user, score }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 10);
+
+          renderLeaderboard(topArray);
+        }
+      } catch (err) {
+        console.warn('Non-JSON WebSocket message:', event.data);
+      }
+    };
+
+    const scoreForm = document.getElementById('scoreForm');
+    scoreForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const user = document.getElementById('user').value.trim();
+      const score = parseInt(document.getElementById('score').value.trim(), 10);
+
+      if (!user || isNaN(score)) return;
+
+      fetch(`${apiUrl}/submit-score`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user, score })
+      }).then(() => {
+        scoreForm.reset();
+      });
+    });
+  </script>
+</body>
+</html>

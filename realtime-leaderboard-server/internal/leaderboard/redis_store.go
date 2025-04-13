@@ -9,8 +9,9 @@ import (
 
 const leaderboardKey = "leaderboard"
 
-func SubmitScoreToRedis(userId string, score int64) error {
-	return redis_client.GetRedisClient().ZIncrBy(redis_client.GetCtx(), leaderboardKey, float64(score), userId).Err()
+func SubmitScoreToRedis(user string, score int64) (float64, error) {
+	newScore, err := redis_client.GetRedisClient().ZIncrBy(redis_client.GetCtx(), leaderboardKey, float64(score), user).Result()
+	return newScore, err
 }
 
 func GetTopNFromRedis(n int64) ([]redis.Z, error) {
